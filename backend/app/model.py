@@ -10,11 +10,11 @@ class ASLLandmarkMLP(nn.Module):
     Multilayer Perceptron for 21-landmark (63-dimensional) ASL Alphabet classification.
     
     Architecture:
-      Input (63 features) -> Linear(128) -> BatchNorm1d(128) -> ReLU -> Dropout(0.2)
-                          -> Linear(64)  -> BatchNorm1d(64)  -> ReLU -> Dropout(0.2)
-                          -> Linear(24)  -> Logits
+      Input (63 features) -> Linear(128) -> ReLU -> Dropout(0.25)
+                          -> Linear(64)  -> ReLU -> Dropout(0.25)
+                          -> Linear(classes) -> Logits
     """
-    def __init__(self, input_dim: int = 63, hidden_dim_1: int = 128, hidden_dim_2: int = 64, num_classes: int = 24, dropout_rate: float = 0.2):
+    def __init__(self, input_dim: int = 63, hidden_dim_1: int = 128, hidden_dim_2: int = 64, num_classes: int = 24, dropout_rate: float = 0.25):
         super(ASLLandmarkMLP, self).__init__()
         
         self.input_dim = input_dim
@@ -50,7 +50,7 @@ class ASLLandmarkMLP(nn.Module):
             "hidden_dim_1": self.fc1.out_features,
             "hidden_dim_2": self.fc2.out_features,
             "num_classes": self.num_classes,
-            "architecture": "MLP-63-128-64-24",
+            "architecture": f"MLP-63-128-64-{self.num_classes}",
             "activation": "ReLU",
-            "dropout": 0.2
+            "dropout": 0.25
         }
