@@ -12,10 +12,12 @@ class HealthResponse(BaseModel):
 
 
 class PreprocessingConfig(BaseModel):
-    version: str = Field(..., example="v1.0.0")
+    version: str = Field(..., example="v2.0.0")
     input_features: int = Field(default=63, description="21 landmarks x 3 coordinates (x, y, z)")
     reference_point: str = Field(default="wrist (landmark 0)")
-    normalization: str = Field(default="p_i' = (p_i - p_0) / (max_dist + epsilon)")
+    normalization: str = Field(
+        default="wrist-relative; divide by XY distance from landmark 0 to landmark 9; mirror Left x"
+    )
     epsilon: float = Field(default=1e-6)
 
 

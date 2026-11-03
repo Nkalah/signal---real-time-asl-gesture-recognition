@@ -29,7 +29,7 @@ def test_metadata_endpoint():
     assert "Z" not in data["supported_letters"]
     assert set(data["excluded_letters"]) == {"J", "Z"}
     assert data["input_dimension"] == 63
-    assert data["preprocessing"]["version"] == "v1.0.0"
+    assert data["preprocessing"]["version"] == "v2.0.0"
 
 
 def test_ready_endpoint():

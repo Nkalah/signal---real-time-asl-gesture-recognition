@@ -61,7 +61,7 @@ export const ArchitectureModal: React.FC<ArchitectureModalProps> = ({ isOpen, on
                 <span>2. Feature Normalization</span>
               </div>
               <p className="text-xs text-slate-400 leading-relaxed">
-                Wrist-relative translation (p_i - p_0) and Euclidean hand-scale normalization. Produces an invariant 63-element vector.
+                Preprocessing: v2.0.0. Subtract the wrist, scale by the XY distance to landmark 9, then mirror left-hand x coordinates to canonical right-hand orientation.
               </p>
             </div>
 

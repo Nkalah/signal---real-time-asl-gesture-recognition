@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import List, Tuple, Dict, Any
 
 from sklearn.model_selection import GroupShuffleSplit, train_test_split
+from backend.app.preprocessing import normalize_landmarks
 
 # 24 Static ASL Letters (Excluding J and Z)
 SUPPORTED_LETTERS: List[str] = [
@@ -16,44 +17,6 @@ SUPPORTED_LETTERS: List[str] = [
 ]
 LETTER_TO_INDEX: Dict[str, int] = {letter: idx for idx, letter in enumerate(SUPPORTED_LETTERS)}
 INDEX_TO_LETTER: Dict[int, str] = {idx: letter for idx, letter in enumerate(SUPPORTED_LETTERS)}
-
-
-def normalize_landmarks(coords: np.ndarray) -> np.ndarray:
-    """
-    Standard preprocessing specification v1.0.0:
-    
-    1. Input coords: shape (21, 3) or flattened (63,)
-    2. Missing / NaN check: all coordinates must be finite.
-    3. Wrist-relative transformation: p_i' = p_i - p_0 (where p_0 is Wrist, landmark 0).
-    4. Hand-scale normalization:
-       scale s = max Euclidean distance from wrist to any landmark point.
-       p_i'' = (p_i - p_0) / (s + epsilon), where epsilon = 1e-6.
-    5. Returns flattened 63-element float32 array: [x0, y0, z0, ..., x20, y20, z20].
-    """
-    coords = np.asarray(coords, dtype=np.float32)
-    if coords.ndim == 1:
-        if coords.shape[0] != 63:
-            raise ValueError(f"Expected 63 coordinates, got {coords.shape[0]}")
-        coords = coords.reshape((21, 3))
-    elif coords.shape != (21, 3):
-        raise ValueError(f"Expected shape (21, 3), got {coords.shape}")
-
-    if not np.all(np.isfinite(coords)):
-        raise ValueError("Landmarks contain non-finite values (NaN or Inf)")
-
-    wrist = coords[0].copy()
-    shifted = coords - wrist
-    
-    # Calculate Euclidean distances from wrist
-    dists = np.linalg.norm(shifted, axis=1)
-    scale = np.max(dists)
-    
-    epsilon = 1e-6
-    if scale < epsilon:
-        raise ValueError(f"Degenerate hand scale detected: {scale:.8f}")
-
-    normalized = shifted / (scale + epsilon)
-    return normalized.flatten().astype(np.float32)
 
 
 def generate_canonical_hand(letter: str) -> np.ndarray:

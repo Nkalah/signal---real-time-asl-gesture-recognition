@@ -101,7 +101,7 @@ def get_metadata():
             version=PREPROCESSING_VERSION,
             input_features=INPUT_FEATURES,
             reference_point="wrist (landmark 0)",
-            normalization="p_i' = (p_i - p_0) / (max_dist + epsilon)",
+            normalization="wrist-relative; divide by XY distance from landmark 0 to landmark 9; mirror Left x",
             epsilon=1e-6
         ),
         input_dimension=INPUT_FEATURES,

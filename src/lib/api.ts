@@ -13,15 +13,19 @@ import {
 const API_BASE = '/api';
 
 /**
- * Standard Landmark Preprocessing Specification v1.0.0
+ * Standard Landmark Preprocessing Specification v2.0.0
  *
  * 1. Takes 21 landmark points [{x, y, z}, ...]
  * 2. Checks all points are valid and finite
  * 3. Shifts relative to wrist (point 0): p_i' = p_i - p_0
- * 4. Normalizes by hand scale s = max(||p_i'||): p_i'' = p_i' / (s + 1e-6)
- * 5. Returns flattened 63-element float array
+ * 4. Normalizes by the XY distance between wrist and middle-finger MCP (landmark 9)
+ * 5. Mirrors left-hand x coordinates into the canonical right-hand orientation
+ * 6. Returns flattened 63-element float array
  */
-export function preprocessLandmarks(landmarks: LandmarkPoint[]): number[] {
+export function preprocessLandmarks(
+  landmarks: LandmarkPoint[],
+  handedness: string = 'Right',
+): number[] {
   if (!landmarks || landmarks.length !== 21) {
     throw new Error(`Expected exactly 21 landmarks, received ${landmarks?.length || 0}`);
   }
@@ -31,7 +35,11 @@ export function preprocessLandmarks(landmarks: LandmarkPoint[]): number[] {
     throw new Error('Invalid wrist landmark');
   }
 
-  let maxDist = 0;
+  const normalizedHandedness = handedness.toLowerCase();
+  if (normalizedHandedness !== 'left' && normalizedHandedness !== 'right') {
+    throw new Error(`Expected handedness 'Left' or 'Right', received ${handedness}`);
+  }
+
   const shifted: { x: number; y: number; z: number }[] = [];
 
   for (let i = 0; i < 21; i++) {
@@ -45,22 +53,21 @@ export function preprocessLandmarks(landmarks: LandmarkPoint[]): number[] {
     const dz = lm.z - wrist.z;
     shifted.push({ x: dx, y: dy, z: dz });
 
-    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-    if (dist > maxDist) maxDist = dist;
   }
 
   const epsilon = 1e-6;
-  if (maxDist < epsilon) {
-    throw new Error(`Degenerate hand scale detected: ${maxDist}`);
+  const scale = Math.hypot(shifted[9].x, shifted[9].y);
+  if (scale < epsilon) {
+    throw new Error(`Degenerate wrist-to-middle-MCP scale detected: ${scale}`);
   }
-  const scale = maxDist + epsilon;
+  const denominator = scale + epsilon;
 
   const vector: number[] = [];
   for (let i = 0; i < 21; i++) {
     vector.push(
-      shifted[i].x / scale,
-      shifted[i].y / scale,
-      shifted[i].z / scale
+      (normalizedHandedness === 'left' ? -shifted[i].x : shifted[i].x) / denominator,
+      shifted[i].y / denominator,
+      shifted[i].z / denominator
     );
   }
 

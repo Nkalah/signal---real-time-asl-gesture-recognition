@@ -208,10 +208,10 @@ app.get('/api/metadata', async (_req, res) => {
     exclusion_reason:
       'Letters J and Z require motion trajectories and are not reliably recognizable from static 3D landmark poses.',
     preprocessing: {
-      version: 'v1.0.0',
+      version: 'v2.0.0',
       input_features: 63,
       reference_point: 'wrist (landmark 0)',
-      normalization: "p_i' = (p_i - p_0) / (max_dist + epsilon)",
+      normalization: 'wrist-relative; divide by XY distance from landmark 0 to landmark 9; mirror Left x',
       epsilon: 1e-6,
     },
     input_dimension: 63,

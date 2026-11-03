@@ -125,14 +125,14 @@ export default function App() {
 
   // Callback when MediaPipe detects 21 hand landmarks in live frame
   const handleLandmarksDetected = useCallback(
-    async (landmarks: LandmarkPoint[], mediaPipeMs: number) => {
+    async (landmarks: LandmarkPoint[], mediaPipeMs: number, handedness = 'Unknown') => {
       if (requestInFlightRef.current) return;
       requestInFlightRef.current = true;
       const requestGeneration = requestGenerationRef.current;
 
       try {
         const preprocessingStart = performance.now();
-        const preprocessed = preprocessLandmarks(landmarks);
+        const preprocessed = preprocessLandmarks(landmarks, handedness);
         const preprocessingMs = performance.now() - preprocessingStart;
 
         const { result, timings } = await predictGesture(preprocessed);

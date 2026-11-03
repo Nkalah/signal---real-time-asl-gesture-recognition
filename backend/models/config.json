@@ -36,9 +36,10 @@
   ],
   "exclusion_reason": "Letters J and Z involve dynamic motion and cannot be reliably detected with static landmark pose classification.",
   "preprocessing": {
-    "version": "v1.0.0",
+    "version": "v2.0.0",
     "wrist_relative": true,
-    "scale_normalization": "p_i' = (p_i - p_0) / (max_dist + 1e-6)",
+    "scale_normalization": "XY distance between wrist (landmark 0) and middle MCP (landmark 9) plus 1e-6",
+    "left_hand_mirroring": "negate normalized x coordinates for Left handedness",
     "epsilon": 1e-06
   },
   "training_metadata": {
