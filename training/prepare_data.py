@@ -1,9 +1,11 @@
 """Data preparation and landmark preprocessing for SIGNAL ASL Gesture Recognition."""
 
 import math
+import logging
 import numpy as np
 import pandas as pd
 from pathlib import Path
+from dataclasses import dataclass
 from typing import List, Tuple, Dict, Any
 
 from sklearn.model_selection import GroupShuffleSplit, train_test_split
@@ -17,6 +19,154 @@ SUPPORTED_LETTERS: List[str] = [
 ]
 LETTER_TO_INDEX: Dict[str, int] = {letter: idx for idx, letter in enumerate(SUPPORTED_LETTERS)}
 INDEX_TO_LETTER: Dict[int, str] = {idx: letter for idx, letter in enumerate(SUPPORTED_LETTERS)}
+NONE_LABEL = "NONE"
+CLASS_LABELS: List[str] = [*SUPPORTED_LETTERS, NONE_LABEL]
+LETTER_TO_CLASS_INDEX: Dict[str, int] = {
+    label: idx for idx, label in enumerate(CLASS_LABELS)
+}
+MIN_HAND_SCALE = 0.06
+LOGGER = logging.getLogger(__name__)
+
+
+@dataclass
+class CollectedLandmarkData:
+    features: np.ndarray
+    labels: np.ndarray
+    label_names: List[str]
+    participants: List[str]
+    sessions: List[str]
+    conditions: List[str]
+    handedness: List[str]
+    timestamps_ns: np.ndarray
+    timestamp_strings: List[str]
+    source_files: List[str]
+    dropped_small_hands: int
+
+
+def load_collected_data(
+    data_dir: Path = Path(__file__).resolve().parent.parent / "data" / "raw",
+    min_hand_scale: float = MIN_HAND_SCALE,
+) -> CollectedLandmarkData | None:
+    """Load and normalize every browser-collected CSV in data_dir."""
+    csv_files = sorted(data_dir.glob("signal_landmarks_*.csv"))
+    legacy_files = sorted(data_dir.glob("landmarks_*.npy"))
+    if not csv_files:
+        if legacy_files:
+            raise ValueError(
+                "Only legacy Python MediaPipe captures were found. "
+                "Training requires browser-collected signal_landmarks_*.csv files."
+            )
+        return None
+    if legacy_files:
+        LOGGER.warning(
+            "Ignoring %d legacy .npy files because they were captured with a different detector.",
+            len(legacy_files),
+        )
+
+    coordinate_columns = [f"{axis}{i}" for i in range(21) for axis in ("x", "y", "z")]
+    required = {
+        "label",
+        "source",
+        "participant_id",
+        "session_id",
+        "condition",
+        "handedness",
+        "captured_at",
+        *coordinate_columns,
+    }
+    features: List[np.ndarray] = []
+    labels: List[int] = []
+    participants: List[str] = []
+    sessions: List[str] = []
+    conditions: List[str] = []
+    handedness_values: List[str] = []
+    timestamps_ns: List[int] = []
+    timestamp_strings: List[str] = []
+    source_files: List[str] = []
+    seen_letters = set()
+    dropped_small_hands = 0
+    sample_count = 0
+
+    for path in csv_files:
+        df = pd.read_csv(path)
+        missing_columns = required - set(df.columns)
+        if missing_columns:
+            raise ValueError(f"CSV {path.name} is missing columns: {sorted(missing_columns)}")
+        for row_number, row in enumerate(df.to_dict(orient="records"), start=2):
+            sample_count += 1
+            letter = str(row["label"]).strip().upper()
+            if letter not in LETTER_TO_CLASS_INDEX:
+                raise ValueError(f"Unsupported label {letter!r} in {path.name}:{row_number}")
+            participant = str(row["participant_id"]).strip()
+            session = str(row["session_id"]).strip()
+            condition = str(row["condition"]).strip()
+            if not participant or not session or not condition:
+                raise ValueError(f"Missing collection metadata in {path.name}:{row_number}")
+            hand = str(row["handedness"]).strip().title()
+            if hand not in {"Left", "Right"}:
+                raise ValueError(
+                    f"Expected Left or Right handedness in {path.name}:{row_number}, got {hand!r}"
+                )
+            try:
+                raw = np.asarray(
+                    [row[column] for column in coordinate_columns], dtype=np.float32
+                ).reshape((21, 3))
+                timestamp = pd.to_datetime(row["captured_at"], utc=True, errors="raise")
+            except (TypeError, ValueError, pd.errors.ParserError) as error:
+                raise ValueError(f"Invalid capture row in {path.name}:{row_number}: {error}") from error
+            if not np.all(np.isfinite(raw)):
+                raise ValueError(f"Non-finite landmarks in {path.name}:{row_number}")
+
+            relative = raw - raw[0]
+            scale = float(np.linalg.norm(relative[9, :2]))
+            if scale < min_hand_scale:
+                dropped_small_hands += 1
+                continue
+
+            features.append(normalize_landmarks(raw, hand))
+            labels.append(LETTER_TO_CLASS_INDEX[letter])
+            participants.append(participant)
+            sessions.append(session)
+            conditions.append(condition)
+            handedness_values.append(hand)
+            timestamps_ns.append(int(timestamp.value))
+            timestamp_strings.append(timestamp.isoformat())
+            source_files.append(path.name)
+            seen_letters.add(letter)
+
+    LOGGER.info(
+        "Loaded %d browser capture rows from %d CSV files; dropped %d rows below scale %.2f.",
+        sample_count,
+        len(csv_files),
+        dropped_small_hands,
+        min_hand_scale,
+    )
+    missing_letters = sorted(set(SUPPORTED_LETTERS) - seen_letters)
+    if missing_letters:
+        raise ValueError(
+            "Collected dataset is missing classes after hand-scale filtering: "
+            + ", ".join(missing_letters)
+        )
+    if not features:
+        raise ValueError("No usable landmark rows remain after hand-scale filtering.")
+
+    label_names = [*SUPPORTED_LETTERS]
+    if NONE_LABEL in seen_letters:
+        label_names.append(NONE_LABEL)
+    LOGGER.info("Training labels: %s", label_names)
+    return CollectedLandmarkData(
+        features=np.asarray(features, dtype=np.float32),
+        labels=np.asarray(labels, dtype=np.int64),
+        label_names=label_names,
+        participants=participants,
+        sessions=sessions,
+        conditions=conditions,
+        handedness=handedness_values,
+        timestamps_ns=np.asarray(timestamps_ns, dtype=np.int64),
+        timestamp_strings=timestamp_strings,
+        source_files=source_files,
+        dropped_small_hands=dropped_small_hands,
+    )
 
 
 def generate_canonical_hand(letter: str) -> np.ndarray:
@@ -328,108 +478,34 @@ def augment_landmarks(landmarks: np.ndarray, rng: np.random.Generator) -> np.nda
 def load_collected_dataset(
     data_dir: Path = Path(__file__).resolve().parent.parent / "data" / "raw",
 ) -> Tuple[np.ndarray, np.ndarray, List[str]] | None:
-    """Load browser-exported raw-landmark CSVs and legacy NumPy captures.
-
-    Browser CSVs contain raw MediaPipe Tasks Vision image landmarks plus
-    participant/session metadata. They are normalized here using the exact
-    preprocessing function used by training and inference.
-    """
-    npy_files = sorted(data_dir.glob("landmarks_*.npy"))
-    csv_files = sorted(data_dir.glob("signal_landmarks_*.csv"))
-    if not npy_files and not csv_files:
+    """Compatibility wrapper returning features, targets, and participant groups."""
+    data = load_collected_data(data_dir)
+    if data is None:
         return None
 
-    features: List[np.ndarray] = []
-    labels: List[int] = []
-    participant_ids: List[str] = []
-    session_ids: List[str] = []
-    seen_letters = set()
-
-    coordinate_columns = [f"{axis}{i}" for i in range(21) for axis in ("x", "y", "z")]
-
-    for path in csv_files:
-        df = pd.read_csv(path)
-        required = {"label", "participant_id", "session_id", *coordinate_columns}
-        missing_columns = required - set(df.columns)
-        if missing_columns:
-            raise ValueError(f"CSV {path.name} is missing columns: {sorted(missing_columns)}")
-        for row in df.to_dict(orient="records"):
-            letter = str(row["label"]).strip().upper()
-            if letter not in LETTER_TO_INDEX:
-                raise ValueError(f"Unsupported letter '{letter}' in {path.name}")
-            raw = np.asarray([row[column] for column in coordinate_columns], dtype=np.float32).reshape(21, 3)
-            normalized = normalize_landmarks(raw)
-            features.append(normalized)
-            labels.append(LETTER_TO_INDEX[letter])
-            participant_ids.append(str(row["participant_id"]).strip())
-            session_ids.append(str(row["session_id"]).strip())
-            seen_letters.add(letter)
-
-    for path in npy_files:
-        parts = path.stem.split("_")
-        if len(parts) < 4 or parts[0] != "landmarks":
-            raise ValueError(f"Unexpected collected-data filename: {path.name}")
-        letter = parts[1].upper()
-        if letter not in LETTER_TO_INDEX:
-            raise ValueError(f"Unsupported letter in collected-data filename: {path.name}")
-        participant = "_".join(parts[2:-1])
-        samples = np.asarray(np.load(path, allow_pickle=False), dtype=np.float32)
-        if samples.ndim == 3 and samples.shape[1:] == (21, 3):
-            samples = np.stack([normalize_landmarks(sample) for sample in samples])
-        elif samples.ndim != 2 or samples.shape[1] != 63:
-            raise ValueError(
-                f"Expected normalized (N, 63) or raw (N, 21, 3) samples in {path.name}, "
-                f"got {samples.shape}"
-            )
-        if samples.shape[0] == 0 or not np.all(np.isfinite(samples)):
-            raise ValueError(f"Collected data is empty or non-finite: {path.name}")
-        wrist_relative = samples.reshape((-1, 21, 3))
-        hand_scales = np.linalg.norm(wrist_relative, axis=2).max(axis=1)
-        if np.any(hand_scales < 1e-6):
-            raise ValueError(f"Collected data contains a degenerate hand: {path.name}")
-        features.extend(samples)
-        labels.extend([LETTER_TO_INDEX[letter]] * len(samples))
-        participant_ids.extend([participant] * len(samples))
-        # Legacy .npy files have no session metadata; preserve their participant grouping.
-        session_ids.extend([participant] * len(samples))
-        seen_letters.add(letter)
-
-    missing = sorted(set(SUPPORTED_LETTERS) - seen_letters)
-    if missing:
-        raise ValueError(
-            "Collected dataset is missing classes: "
-            + ", ".join(missing)
-            + ". Collect all 24 supported letters before training."
-        )
-
-    # Prevent near-duplicate frames from one recording session leaking across splits.
-    # With >=3 real signers, split by signer. With one signer and >=3 sessions,
-    # split by session (same-signer generalization only, not signer-independent).
-    unique_people = set(participant_ids)
-    unique_sessions = {(person, session) for person, session in zip(participant_ids, session_ids)}
-    if len(unique_people) >= 3:
-        groups = [f"signer::{person}" for person in participant_ids]
-    elif len(unique_sessions) >= 3:
-        groups = [f"session::{person}::{session}" for person, session in zip(participant_ids, session_ids)]
-    else:
-        groups = participant_ids
-
-    return (
-        np.asarray(features, dtype=np.float32),
-        np.asarray(labels, dtype=np.int64),
-        groups,
-    )
+    groups = [
+        f"session::{participant}::{session}"
+        for participant, session in zip(data.participants, data.sessions)
+    ]
+    return data.features, data.labels, groups
 
 
 def load_training_dataset(
     samples_per_class: int = 250,
     seed: int = 42,
     data_dir: Path = Path(__file__).resolve().parent.parent / "data" / "raw",
+    allow_synthetic: bool = False,
 ) -> Tuple[np.ndarray, np.ndarray, List[str], str]:
-    """Prefer captured landmarks; use generated poses only when no captures exist."""
+    """Load real browser data unless generated smoke-test data is explicitly allowed."""
     collected = load_collected_dataset(data_dir)
     if collected is not None:
         return (*collected, "collected")
+
+    if not allow_synthetic:
+        raise FileNotFoundError(
+            f"No browser-collected signal_landmarks_*.csv files found in {data_dir}. "
+            "Collect real data before training, or pass --allow-synthetic for a smoke test."
+        )
 
     X, y, participants = build_dataset(samples_per_class=samples_per_class, seed=seed)
     return X, y, participants, "synthetic"

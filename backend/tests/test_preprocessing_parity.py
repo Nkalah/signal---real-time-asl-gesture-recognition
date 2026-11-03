@@ -1,3 +1,4 @@
+import csv
 import json
 import subprocess
 from pathlib import Path
@@ -9,6 +10,8 @@ from training.prepare_data import (
     LETTER_TO_INDEX,
     SUPPORTED_LETTERS as TRAINING_LETTERS,
     load_collected_dataset,
+    load_collected_data,
+    load_training_dataset,
     generate_canonical_hand,
     normalize_landmarks,
     split_dataset,
@@ -16,6 +19,41 @@ from training.prepare_data import (
 
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
+COORDINATE_COLUMNS = [f"{axis}{i}" for i in range(21) for axis in "xyz"]
+CSV_COLUMNS = [
+    "label",
+    "source",
+    "participant_id",
+    "session_id",
+    "condition",
+    "handedness",
+    "captured_at",
+    *COORDINATE_COLUMNS,
+]
+
+
+def _capture_row(letter, raw, session="session_one", handedness="Right", timestamp="2026-11-02T00:00:00Z"):
+    row = {
+        "label": letter,
+        "source": "webcam",
+        "participant_id": "signer_one",
+        "session_id": session,
+        "condition": "front_view",
+        "handedness": handedness,
+        "captured_at": timestamp,
+    }
+    row.update({
+        column: float(value)
+        for column, value in zip(COORDINATE_COLUMNS, np.asarray(raw).reshape(-1))
+    })
+    return row
+
+
+def _write_capture_csv(path, rows):
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=CSV_COLUMNS)
+        writer.writeheader()
+        writer.writerows(rows)
 
 
 def test_python_and_typescript_match_python_generated_golden_vectors():
@@ -69,31 +107,48 @@ def test_supported_letter_order_matches_training_and_backend():
     assert model_config["supported_letters"] == TRAINING_LETTERS
 
 
-def test_collected_samples_are_loaded_with_labels_and_participant_groups(tmp_path):
-    for letter in TRAINING_LETTERS:
-        normalized = normalize_landmarks(generate_canonical_hand(letter))
-        np.save(
-            tmp_path / f"landmarks_{letter}_signer_one_123.npy",
-            normalized[np.newaxis, :],
-        )
+def test_synthetic_template_csv_loader_smoke_normalizes_labels_and_groups(tmp_path):
+    rows = [
+        _capture_row(letter, generate_canonical_hand(letter))
+        for letter in TRAINING_LETTERS
+    ]
+    _write_capture_csv(tmp_path / "signal_landmarks_signer_one.csv", rows)
 
-    X, y, participants = load_collected_dataset(tmp_path)
+    X, y, groups = load_collected_dataset(tmp_path)
 
     assert X.shape == (24, 63)
     assert y.tolist() == list(range(24))
-    assert participants == ["signer_one"] * 24
+    assert groups == ["session::signer_one::session_one"] * 24
 
 
-def test_collected_dataset_requires_every_supported_letter(tmp_path):
-    normalized = normalize_landmarks(generate_canonical_hand("A"))
-    np.save(tmp_path / "landmarks_A_signer_one_123.npy", normalized[np.newaxis, :])
+def test_csv_loader_requires_all_static_letters_after_scale_filtering(tmp_path):
+    _write_capture_csv(
+        tmp_path / "signal_landmarks_signer_one.csv",
+        [_capture_row("A", generate_canonical_hand("A"))],
+    )
 
     try:
-        load_collected_dataset(tmp_path)
+        load_collected_data(tmp_path)
     except ValueError as error:
         assert "missing classes" in str(error)
     else:
-        raise AssertionError("A partial collected dataset must not silently train.")
+        raise AssertionError("A partial real dataset must not silently train.")
+
+
+def test_training_loader_requires_real_data_unless_smoke_flag_is_set(tmp_path):
+    try:
+        load_training_dataset(data_dir=tmp_path)
+    except FileNotFoundError as error:
+        assert "--allow-synthetic" in str(error)
+    else:
+        raise AssertionError("Default training must fail without browser-collected data.")
+
+    _, _, _, source = load_training_dataset(
+        samples_per_class=1,
+        data_dir=tmp_path,
+        allow_synthetic=True,
+    )
+    assert source == "synthetic"
 
 
 def test_signer_split_keeps_participants_out_of_other_splits():
@@ -111,36 +166,71 @@ def test_signer_split_keeps_participants_out_of_other_splits():
     assert val_signers.isdisjoint(test_signers)
 
 
+def test_real_csv_loader_concatenates_files_drops_small_hands_and_supports_none(tmp_path):
+    letters = [
+        _capture_row(
+            letter,
+            generate_canonical_hand(letter),
+            session="session_one",
+            handedness="Left" if index % 2 else "Right",
+            timestamp=f"2026-11-02T00:{index:02d}:00Z",
+        )
+        for index, letter in enumerate(TRAINING_LETTERS)
+    ]
+    small_a = generate_canonical_hand("A") * 0.05
+    none_row = _capture_row(
+        "NONE",
+        generate_canonical_hand("A"),
+        timestamp="2026-11-02T00:25:00Z",
+    )
+    _write_capture_csv(tmp_path / "signal_landmarks_part_a.csv", letters[:12])
+    _write_capture_csv(
+        tmp_path / "signal_landmarks_part_b.csv",
+        [_capture_row("A", small_a), *letters[12:], none_row],
+    )
+
+    data = load_collected_data(tmp_path)
+
+    assert data is not None
+    assert data.features.shape == (25, 63)
+    assert data.label_names == [*TRAINING_LETTERS, "NONE"]
+    assert data.dropped_small_hands == 1
+    assert set(data.source_files) == {
+        "signal_landmarks_part_a.csv",
+        "signal_landmarks_part_b.csv",
+    }
+    left_index = data.handedness.index("Left")
+    left_raw = generate_canonical_hand(TRAINING_LETTERS[1])
+    np.testing.assert_allclose(
+        data.features[left_index],
+        normalize_landmarks(left_raw, "Left"),
+        atol=1e-6,
+    )
+
+
 def test_browser_csv_loader_normalizes_raw_landmarks_and_splits_by_session(tmp_path):
-    import csv
-
-    coordinate_columns = [f"{axis}{i}" for i in range(21) for axis in ("x", "y", "z")]
-    columns = ["label", "source", "participant_id", "session_id", "condition", "handedness", "captured_at", *coordinate_columns]
     csv_path = tmp_path / "signal_landmarks_participant_01_sessions.csv"
-
-    with csv_path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=columns)
-        writer.writeheader()
-        for session_id in ("session_1", "session_2", "session_3"):
-            for letter in TRAINING_LETTERS:
-                row = {
-                    "label": letter,
-                    "source": "webcam",
-                    "participant_id": "participant_01",
-                    "session_id": session_id,
-                    "condition": "front_view",
-                    "handedness": "Right",
-                    "captured_at": "2026-11-02T00:00:00Z",
-                }
-                raw = generate_canonical_hand(letter).reshape(-1)
-                row.update({column: float(value) for column, value in zip(coordinate_columns, raw)})
-                writer.writerow(row)
+    rows = [
+        _capture_row(
+            letter,
+            generate_canonical_hand(letter),
+            session=session_id,
+            timestamp=f"2026-11-0{session_index + 1}T00:00:00Z",
+        )
+        for session_index, session_id in enumerate(("session_1", "session_2", "session_3"))
+        for letter in TRAINING_LETTERS
+    ]
+    _write_capture_csv(csv_path, rows)
 
     X, y, groups = load_collected_dataset(tmp_path)
     assert X.shape == (72, 63)
     assert len(set(y.tolist())) == 24
     assert len(set(groups)) == 3
-    assert all(group.startswith("session::participant_01::") for group in groups)
+    assert set(groups) == {
+        "session::signer_one::session_1",
+        "session::signer_one::session_2",
+        "session::signer_one::session_3",
+    }
 
     train_idx, val_idx, test_idx, strategy = split_dataset(y, groups, seed=7)
     assert "same signer" in strategy

@@ -1,5 +1,7 @@
 """PyTorch training script for SIGNAL ASL Landmark Classifier."""
 
+import argparse
+import logging
 import os
 import sys
 import json
@@ -18,7 +20,7 @@ if str(root_dir) not in sys.path:
     sys.path.insert(0, str(root_dir))
 
 from backend.app.model import ASLLandmarkMLP
-from backend.app.config import SUPPORTED_LETTERS, INPUT_FEATURES, NUM_CLASSES, PREPROCESSING_VERSION
+from backend.app.config import SUPPORTED_LETTERS, INPUT_FEATURES, PREPROCESSING_VERSION
 from training.prepare_data import (
     augment_landmarks,
     load_training_dataset,
@@ -32,7 +34,8 @@ def train_model(
     batch_size: int = 32,
     lr: float = 0.001,
     seed: int = 42,
-    save_dir: Path = Path("backend/models")
+    save_dir: Path = Path("backend/models"),
+    allow_synthetic: bool = False,
 ):
     print("=" * 60)
     print("SIGNAL ASL MODEL TRAINING PIPELINE")
@@ -47,13 +50,17 @@ def train_model(
     X, y, participants, dataset_source = load_training_dataset(
         samples_per_class=250,
         seed=seed,
+        allow_synthetic=allow_synthetic,
     )
     if dataset_source == "synthetic":
-        print(
-            "WARNING: No collected webcam landmarks found. "
-            "This run uses synthetic canonical poses and is not a real-world accuracy evaluation."
-        )
+        print("SMOKE TEST ONLY: generated canonical poses are not a real-world accuracy evaluation.")
+        if save_dir == Path("backend/models"):
+            save_dir = Path("backend/models/smoke")
     print(f"Total dataset samples: {X.shape[0]} | Features per sample: {X.shape[1]}")
+    class_labels = list(SUPPORTED_LETTERS)
+    if np.any(y == len(SUPPORTED_LETTERS)):
+        class_labels.append("NONE")
+    num_classes = len(class_labels)
     
     # 2. Train / Val / Test split (70 / 15 / 15)
     train_idx, val_idx, test_idx, split_strategy = split_dataset(y, participants, seed)
@@ -90,7 +97,7 @@ def train_model(
         input_dim=INPUT_FEATURES,
         hidden_dim_1=128,
         hidden_dim_2=64,
-        num_classes=NUM_CLASSES,
+        num_classes=num_classes,
         dropout_rate=0.2
     ).to(device)
     
@@ -178,9 +185,11 @@ def train_model(
     
     report = classification_report(
         test_targets, test_preds,
-        target_names=SUPPORTED_LETTERS,
+        labels=list(range(num_classes)),
+        target_names=class_labels,
         digits=4,
-        output_dict=True
+        output_dict=True,
+        zero_division=0,
     )
     cm = confusion_matrix(test_targets, test_preds)
     
@@ -214,10 +223,11 @@ def train_model(
     config_data = {
         "model_name": "SIGNAL ASL Landmark MLP",
         "version": "1.0.0",
-        "architecture": "MLP-63-128-64-24",
+        "architecture": f"MLP-63-128-64-{num_classes}",
         "input_features": INPUT_FEATURES,
-        "num_classes": NUM_CLASSES,
+        "num_classes": num_classes,
         "supported_letters": SUPPORTED_LETTERS,
+        "labels": class_labels,
         "excluded_letters": ["J", "Z"],
         "exclusion_reason": "Letters J and Z involve dynamic motion and cannot be reliably detected with static landmark pose classification.",
         "preprocessing": {
@@ -260,4 +270,22 @@ def train_model(
 
 
 if __name__ == "__main__":
-    train_model(epochs=35, batch_size=32, lr=0.001)
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    parser = argparse.ArgumentParser(description="Train SIGNAL using browser-collected landmark CSVs.")
+    parser.add_argument("--epochs", type=int, default=35)
+    parser.add_argument("--batch-size", type=int, default=32)
+    parser.add_argument("--lr", type=float, default=0.001)
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--allow-synthetic",
+        action="store_true",
+        help="Allow generated poses for a smoke test only; saves under backend/models/smoke.",
+    )
+    args = parser.parse_args()
+    train_model(
+        epochs=args.epochs,
+        batch_size=args.batch_size,
+        lr=args.lr,
+        seed=args.seed,
+        allow_synthetic=args.allow_synthetic,
+    )
