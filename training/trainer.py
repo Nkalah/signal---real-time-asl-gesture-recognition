@@ -16,6 +16,7 @@ from torch.utils.data import DataLoader, TensorDataset
 
 from backend.app.config import INPUT_FEATURES, PREPROCESSING_VERSION, SUPPORTED_LETTERS
 from backend.app.model import ASLLandmarkMLP
+from training.calibration import calibrate_validation
 from training.prepare_data import (
     CollectedLandmarkData,
     EvaluationSplit,
@@ -285,6 +286,11 @@ def train_model(
         for index, split in enumerate(splits)
     ]
     selected_fold = min(fold_results, key=lambda result: result["best_validation_loss"])
+    calibration = calibrate_validation(
+        selected_fold["validation_logits"],
+        selected_fold["validation_targets"],
+        labels,
+    )
     y_true = np.concatenate([result["test_targets"] for result in fold_results])
     y_pred = np.concatenate([result["test_predictions"] for result in fold_results])
     logits = np.concatenate([result["test_logits"] for result in fold_results])
@@ -315,6 +321,10 @@ def train_model(
     )
     (save_dir / "labels.json").write_text(
         json.dumps(labels, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    (save_dir / "calibration.json").write_text(
+        json.dumps(calibration, indent=2) + "\n",
         encoding="utf-8",
     )
     np.savez_compressed(
@@ -370,6 +380,7 @@ def train_model(
             "test_macro_f1": macro_f1,
             "selected_checkpoint_fold": selected_fold["name"],
         },
+        "calibration": calibration,
         "confusion_matrix": matrix.tolist(),
     }
     (save_dir / "config.json").write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")

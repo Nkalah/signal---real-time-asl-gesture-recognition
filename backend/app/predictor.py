@@ -2,12 +2,13 @@
 
 import time
 import json
+import math
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple
 import torch
 import torch.nn.functional as F
 
-from app.config import (
+from .config import (
     MODEL_WEIGHTS_PATH,
     MODEL_CONFIG_PATH,
     SUPPORTED_LETTERS,
@@ -15,8 +16,8 @@ from app.config import (
     NUM_CLASSES,
     PREPROCESSING_VERSION
 )
-from app.model import ASLLandmarkMLP
-from app.schemas import PredictionResponse, TopPrediction
+from .model import ASLLandmarkMLP
+from .schemas import PredictionResponse, TopPrediction
 
 
 class ASLPredictor:
@@ -32,6 +33,10 @@ class ASLPredictor:
         self.model_version: str = "1.0.0"
         self.training_data_source: str = "unknown"
         self.load_error: Optional[str] = None
+        self.temperature: float = 1.0
+        self.max_probability_threshold: float = 0.0
+        self.top_two_margin_threshold: float = 0.0
+        self.none_label: str = "NONE"
         
         # Attempt to load model at initialization
         self.load_model()
@@ -45,12 +50,24 @@ class ASLPredictor:
                 self.model = None
                 return False
                 
-            # Initialize architecture
+            config: Dict[str, Any] = {}
+            if self.config_path.exists():
+                with open(self.config_path, "r", encoding="utf-8") as f:
+                    config = json.load(f)
+            labels = config.get("labels", config.get("supported_letters", SUPPORTED_LETTERS))
+            if (
+                not isinstance(labels, list)
+                or not labels
+                or any(not isinstance(label, str) or not label for label in labels)
+                or len(set(labels)) != len(labels)
+            ):
+                raise ValueError("Model config must contain a non-empty, unique string label list.")
+
             model = ASLLandmarkMLP(
                 input_dim=INPUT_FEATURES,
                 hidden_dim_1=128,
                 hidden_dim_2=64,
-                num_classes=NUM_CLASSES
+                num_classes=len(labels),
             )
             
             # Load state dict
@@ -60,23 +77,32 @@ class ASLPredictor:
             model.eval()
             
             self.model = model
+            self.labels = labels
             self.is_ready = True
             self.load_error = None
-            
-            # Load config if present
-            if self.config_path.exists():
-                try:
-                    with open(self.config_path, "r", encoding="utf-8") as f:
-                        cfg = json.load(f)
-                        if "supported_letters" in cfg:
-                            self.labels = cfg["supported_letters"]
-                        if "version" in cfg:
-                            self.model_version = cfg["version"]
-                        self.training_data_source = cfg.get(
-                            "training_metadata", {}
-                        ).get("dataset_source", "unknown")
-                except Exception:
-                    pass
+
+            calibration = config.get("calibration", {})
+            rejection = calibration.get("rejection", {})
+            temperature = float(calibration.get("temperature", 1.0))
+            confidence_threshold = float(rejection.get("max_probability_below", 0.0))
+            margin_threshold = float(rejection.get("top_two_margin_below", 0.0))
+            if not math.isfinite(temperature) or temperature <= 0:
+                raise ValueError("Calibration temperature must be a positive finite number.")
+            if (
+                not math.isfinite(confidence_threshold)
+                or not 0 <= confidence_threshold <= 1
+                or not math.isfinite(margin_threshold)
+                or not 0 <= margin_threshold <= 1
+            ):
+                raise ValueError("Rejection thresholds must be finite probabilities between 0 and 1.")
+            self.temperature = temperature
+            self.max_probability_threshold = confidence_threshold
+            self.top_two_margin_threshold = margin_threshold
+            self.none_label = str(rejection.get("none_label", "NONE"))
+            self.model_version = str(config.get("version", self.model_version))
+            self.training_data_source = config.get(
+                "training_metadata", {}
+            ).get("dataset_source", "unknown")
                     
             return True
             
@@ -110,13 +136,21 @@ class ASLPredictor:
                 logits = self.model(tensor_input)
             model_forward_ms = (time.perf_counter() - model_start) * 1000.0
             with torch.no_grad():
-                probabilities = F.softmax(logits, dim=1).squeeze(0)
+                probabilities = F.softmax(logits / self.temperature, dim=1).squeeze(0)
                 
             # Top prediction
             conf, pred_idx = torch.max(probabilities, dim=0)
             best_idx = int(pred_idx.item())
-            best_letter = self.labels[best_idx]
+            predicted_label = self.labels[best_idx]
             best_conf = float(conf.item())
+            top_two = torch.topk(probabilities, k=min(2, len(self.labels))).values
+            margin = float((top_two[0] - top_two[1]).item()) if len(top_two) > 1 else best_conf
+            rejected = (
+                best_conf < self.max_probability_threshold
+                or margin < self.top_two_margin_threshold
+                or predicted_label == self.none_label
+            )
+            best_letter = None if rejected else predicted_label
             
             # Top-3 predictions
             topk_confs, topk_indices = torch.topk(probabilities, k=min(3, len(self.labels)))

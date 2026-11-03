@@ -1,0 +1,14 @@
+{
+  "temperature": 1.397645707392616,
+  "ece_before": 0.06406977795132368,
+  "ece_after": 0.17090105776548883,
+  "rejection": {
+    "max_probability_below": 0.5534628296450383,
+    "top_two_margin_below": 0.0017244349128184011,
+    "validation_balanced_acceptance_accuracy": 0.7200128700128701,
+    "validation_correct_sign_coverage": 0.7162162162162162,
+    "validation_overall_coverage": 0.600997506234414,
+    "selection_method": "Validation grid search maximizing balanced accuracy for accepting correct known signs and rejecting incorrect or NONE predictions; ties prefer correct-sign coverage, then overall coverage.",
+    "none_label": "NONE"
+  }
+}

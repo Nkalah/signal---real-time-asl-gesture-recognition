@@ -92,8 +92,12 @@ def get_metadata():
     """Returns supported alphabet classes, feature dimensionalities, and preprocessing specifications."""
     return ModelMetadataResponse(
         model_name="SIGNAL ASL Landmark MLP",
-        architecture="MLP-63-128-64-24",
-        classes_count=NUM_CLASSES,
+        architecture=(
+            predictor.model.get_config()["architecture"]
+            if predictor.model is not None
+            else f"MLP-63-128-64-{NUM_CLASSES}"
+        ),
+        classes_count=len(predictor.labels) if predictor.is_ready else NUM_CLASSES,
         supported_letters=SUPPORTED_LETTERS,
         excluded_letters=EXCLUDED_LETTERS,
         exclusion_reason=EXCLUSION_REASON,
