@@ -43,6 +43,15 @@ class CollectedLandmarkData:
     dropped_small_hands: int
 
 
+@dataclass
+class EvaluationSplit:
+    name: str
+    method: str
+    train_indices: np.ndarray
+    validation_indices: np.ndarray
+    test_indices: np.ndarray
+
+
 def load_collected_data(
     data_dir: Path = Path(__file__).resolve().parent.parent / "data" / "raw",
     min_hand_scale: float = MIN_HAND_SCALE,
@@ -516,7 +525,7 @@ def split_dataset(
     participants: List[str],
     seed: int = 42,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, str]:
-    """Return train, validation, and test indices without signer overlap when possible."""
+    """Make a deterministic sample split for generated smoke-test data only."""
     indices = np.arange(len(y))
     unique_participants = set(participants)
 
@@ -565,6 +574,109 @@ def split_dataset(
         stratify=y[train_val_idx],
     )
     return train_idx, val_idx, test_idx, "sample-wise (signer overlap possible)"
+
+
+def make_evaluation_splits(
+    data: CollectedLandmarkData,
+    validation_fraction: float = 0.15,
+    test_fraction: float = 0.20,
+    buffer_frames: int = 30,
+) -> List[EvaluationSplit]:
+    """Create leave-one-group-out folds or a buffered chronological same-session holdout."""
+    if not 0 < validation_fraction < 1 or not 0 < test_fraction < 1:
+        raise ValueError("Validation and test fractions must be between 0 and 1.")
+    if buffer_frames < 0:
+        raise ValueError("buffer_frames must be non-negative.")
+
+    participant_ids = sorted(set(data.participants))
+    session_keys = sorted(set(zip(data.participants, data.sessions)))
+    folds: List[EvaluationSplit] = []
+
+    if len(participant_ids) >= 2:
+        groups = [np.asarray(data.participants, dtype=object)]
+        group_names = participant_ids
+        method = "leave-one-participant-out"
+    elif len(session_keys) >= 2:
+        group_values = [
+            f"{person}::{session}"
+            for person, session in zip(data.participants, data.sessions)
+        ]
+        groups = [np.asarray(group_values, dtype=object)]
+        group_names = sorted(set(group_values))
+        method = "leave-one-session-out"
+    else:
+        per_class: Dict[str, List[np.ndarray]] = {
+            "train": [],
+            "validation": [],
+            "test": [],
+        }
+        for label_index, label in enumerate(data.label_names):
+            indices = np.flatnonzero(data.labels == label_index)
+            ordered = indices[
+                np.argsort(data.timestamps_ns[indices], kind="stable")
+            ]
+            test_count = max(1, math.ceil(len(ordered) * test_fraction))
+            test_start = len(ordered) - test_count
+            buffer_start = test_start - buffer_frames
+            validation_count = max(1, math.ceil(len(ordered) * validation_fraction))
+            validation_start = buffer_start - validation_count
+            if validation_start <= 0:
+                raise ValueError(
+                    f"Not enough time-ordered samples for {label} to create train, validation, "
+                    f"a {buffer_frames}-frame buffer, and held-out test blocks."
+                )
+            per_class["train"].append(ordered[:validation_start])
+            per_class["validation"].append(ordered[validation_start:buffer_start])
+            per_class["test"].append(ordered[test_start:])
+
+        folds.append(
+            EvaluationSplit(
+                name="single-recording",
+                method="same-person, same-session, NOT generalization",
+                train_indices=np.concatenate(per_class["train"]),
+                validation_indices=np.concatenate(per_class["validation"]),
+                test_indices=np.concatenate(per_class["test"]),
+            )
+        )
+        return folds
+
+    group_values = groups[0]
+    for held_out in group_names:
+        is_test_group = group_values == held_out
+        test_indices = np.flatnonzero(is_test_group)
+        training_pool = np.flatnonzero(~is_test_group)
+        if not len(test_indices) or not len(training_pool):
+            raise ValueError(f"Cannot create held-out fold for group {held_out!r}.")
+
+        per_class_train: List[np.ndarray] = []
+        per_class_validation: List[np.ndarray] = []
+        for label_index, label in enumerate(data.label_names):
+            test_class = test_indices[data.labels[test_indices] == label_index]
+            pool_class = training_pool[data.labels[training_pool] == label_index]
+            if not len(test_class):
+                raise ValueError(f"Held-out group {held_out!r} has no samples for {label}.")
+            ordered = pool_class[
+                np.argsort(data.timestamps_ns[pool_class], kind="stable")
+            ]
+            validation_count = max(1, math.ceil(len(ordered) * validation_fraction))
+            if len(ordered) <= validation_count:
+                raise ValueError(
+                    f"Training groups outside {held_out!r} do not have enough {label} "
+                    "samples for both training and validation."
+                )
+            per_class_train.append(ordered[:-validation_count])
+            per_class_validation.append(ordered[-validation_count:])
+
+        folds.append(
+            EvaluationSplit(
+                name=str(held_out),
+                method=method,
+                train_indices=np.concatenate(per_class_train),
+                validation_indices=np.concatenate(per_class_validation),
+                test_indices=test_indices,
+            )
+        )
+    return folds
 
 
 def build_dataset(samples_per_class: int = 150, seed: int = 42) -> Tuple[np.ndarray, np.ndarray, List[str]]:
