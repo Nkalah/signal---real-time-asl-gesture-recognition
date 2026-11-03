@@ -52,3 +52,5 @@ data/processed/*.npy
 data/raw/*.csv
 data/raw/*.jsonl
 data/public_dataset/
+
+archive/
