@@ -1,0 +1,54 @@
+# Node / Frontend
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Testing & Pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Datasets (large binary raw recordings)
+data/raw/*.npy
+data/raw/*.mp4
+data/raw/*.avi
+data/processed/*.npy
+
+# OS & Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+# SIGNAL V2 collected personal landmark datasets (keep raw recordings out of Git)
+data/raw/*.csv
+data/raw/*.jsonl
+data/public_dataset/

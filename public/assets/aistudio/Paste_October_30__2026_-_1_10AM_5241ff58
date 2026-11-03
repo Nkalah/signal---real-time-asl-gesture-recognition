@@ -1,0 +1,838 @@
+# MASTER BUILD PROMPT — SIGNAL
+## Real-Time ASL Gesture Recognition | Premium AI Product | Production-Minded Implementation
+
+Act as a principal AI/ML engineer, senior Python developer, React/TypeScript architect, computer-vision specialist, product designer, test engineer, and technical lead.
+
+Your mission is to **build a genuinely functional, polished, real-time American Sign Language (ASL) alphabet recognition web application**, from repository inspection through implementation, testing, documentation, and a successful live demonstration.
+
+Do not merely describe how to build it. Work directly in the available project environment, inspect the existing codebase, implement the application, run the code, test the critical workflows, diagnose failures, and fix them.
+
+The finished project must be demonstrably functional, not a static prototype, fake dashboard, collection of disconnected components, or an application that requires undocumented manual fixes.
+
+If you have terminal, filesystem, browser, or computer-use tools available, use them to execute and verify your work. Never claim a command succeeded, a test passed, a model trained, or a feature works unless you have evidence.
+
+---
+
+# 1. PRODUCT VISION
+
+Product name: SIGNAL
+
+Product category: Real-time AI-powered assistive communication prototype.
+
+Core purpose:
+
+Build a browser-based application that uses a webcam to recognize static ASL alphabet gestures and convert them into readable text.
+
+The product should combine:
+
+- Real-time webcam access.
+- MediaPipe hand-landmark detection.
+- A trained PyTorch classification model.
+- A Python FastAPI inference backend.
+- A polished React + TypeScript interface.
+- Stable gesture recognition.
+- Letter-to-text composition.
+- Honest confidence and error handling.
+- Reproducible model training and evaluation.
+- Clear setup and troubleshooting documentation.
+
+The application should work on an ordinary laptop with a webcam and CPU. A dedicated GPU and paid AI APIs must not be required.
+
+Keep inference local during development. Do not upload webcam frames or personal recordings to external services.
+
+IMPORTANT SCOPE LIMITATION:
+
+This is an ASL static-alphabet recognition prototype, not a complete ASL translator. ASL has its own grammar, facial expressions, movement, and linguistic structure.
+
+The first version must explicitly document that J and Z involve movement and are not reliably recognized by a static-pose classifier. Never claim complete 26-letter recognition if the model supports only 24 static classes.
+
+---
+
+# 2. FIRST ACTION: INSPECT BEFORE MODIFYING
+
+Before writing code:
+
+1. Inspect the current working directory and repository.
+2. Identify existing source files, framework, package manager, installed dependencies, Python version, and current implementation status.
+3. Inspect existing README files, configuration files, environment variables, and available model or dataset artifacts.
+4. Identify what already works, what is incomplete, and what is broken.
+5. Preserve useful existing code.
+6. Do not delete or replace a functioning project merely to recreate it from a template.
+7. Create a concise implementation plan based on the actual repository.
+8. Start implementing immediately after the inspection.
+
+Do not ask unnecessary questions. Make sensible engineering decisions and document them.
+
+If a required asset, dataset, package, or tool is unavailable, explain the specific blocker and implement the remaining work wherever possible.
+
+Do not stop after generating a plan.
+
+---
+
+# 3. REQUIRED TECHNOLOGY STACK
+
+Use the following stack unless repository constraints require a justified alternative.
+
+## Frontend
+
+- React
+- TypeScript
+- Vite
+- Tailwind CSS
+- Lucide React
+- Browser MediaDevices API for webcam access
+- MediaPipe Tasks Vision for browser-side hand-landmark extraction
+- Vitest and React Testing Library for appropriate frontend tests
+
+Use semantic HTML, reusable components, strict TypeScript types, responsive layouts, and accessible controls.
+
+## Backend
+
+- Python 3.11 or another verified compatible Python version
+- FastAPI
+- Uvicorn
+- PyTorch
+- NumPy
+- Pydantic
+- pytest
+- HTTPX for API tests
+
+Use MediaPipe in the browser for the primary architecture. Do not install redundant Python computer-vision dependencies unless required by the selected training or evaluation workflow.
+
+OpenCV may be used in optional data collection or image-based experiments.
+
+## Model training and evaluation
+
+- PyTorch
+- NumPy
+- Pandas
+- scikit-learn
+- Matplotlib
+
+## Development and delivery
+
+- Git
+- Environment variables for configurable settings
+- A root README with Windows PowerShell instructions
+- A reproducible dependency configuration
+- A root-level .gitignore
+
+Avoid paid inference APIs, unnecessary databases, authentication systems, cloud dependencies, and complex infrastructure.
+
+---
+
+# 4. MANDATORY ARCHITECTURE
+
+Implement this architecture:
+
+Browser webcam
+    ↓
+MediaPipe Tasks Vision
+    ↓
+21 hand landmarks
+    ↓
+Shared, deterministic feature-preprocessing specification
+    ↓
+HTTP request containing 63 normalized coordinate values
+    ↓
+FastAPI
+    ↓
+Trained PyTorch classifier
+    ↓
+Validated prediction response
+    ↓
+React interface
+    ↓
+Stable letter and text composition
+
+The browser handles camera capture and hand-landmark extraction.
+
+The Python backend handles feature validation, model inference, prediction confidence, and health/model readiness reporting.
+
+The frontend must never invent predictions or substitute random letters when the model is unavailable.
+
+The UI must clearly distinguish:
+
+- Camera unavailable.
+- No hand detected.
+- Hand detected.
+- Backend disconnected.
+- Model not trained or not loaded.
+- Low-confidence prediction.
+- Valid prediction.
+- Prediction in progress.
+
+Use localhost development origins in configuration. Configure CORS explicitly rather than allowing arbitrary origins by default.
+
+Load the model once during application startup, not for every prediction request.
+
+Do not perform expensive model training inside an HTTP request.
+
+---
+
+# 5. CRITICAL DATASET AND MODEL COMPATIBILITY
+
+This requirement is non-negotiable.
+
+The Kaggle Sign Language MNIST dataset consists of 28 × 28 grayscale images and 24 static classes, excluding J and Z.
+
+It does NOT directly provide 63-dimensional MediaPipe landmark vectors.
+
+Never feed 784 image pixels into a model expecting 63 coordinates. Never pretend the two feature representations are interchangeable.
+
+Implement the following strategy.
+
+## Primary model: landmark-based classification
+
+Build a small PyTorch MLP that accepts exactly 63 normalized features:
+
+21 landmarks × 3 coordinates = 63 features.
+
+Use a configurable hidden-layer architecture, ReLU activations, optional dropout, and 24 output logits.
+
+Create:
+
+- training/collect_landmarks.py
+- training/train.py
+- training/evaluate.py
+- backend/app/model.py
+- backend/app/predictor.py
+
+The landmark model must be trained using labeled landmark data produced through the same MediaPipe extraction and preprocessing pipeline used by the live application.
+
+Provide a usable landmark collection workflow with clear class selection and data validation. Support multiple recording sessions and participant identifiers.
+
+If a suitable compatible labeled landmark dataset is already available and its license permits the intended use, evaluate its compatibility before adopting it.
+
+If training data is missing, build the collection workflow and provide exact instructions for generating it. Never fabricate training data or claim that a trained model exists.
+
+## Secondary baseline: Sign Language MNIST
+
+If time and environment permit, implement a separate image-based CNN baseline.
+
+Its input must match the dataset's image representation. Evaluate it separately from the landmark model.
+
+Document that its performance on standardized dataset images does not establish equivalent performance on webcam input.
+
+The image CNN is optional for the initial functional milestone. The working landmark pipeline takes priority.
+
+## Label mapping
+
+Inspect the actual dataset label encoding rather than assuming it.
+
+Create one canonical label mapping for the supported classes and use it consistently in training, evaluation, model artifacts, and inference.
+
+Explicitly handle missing or invalid labels.
+
+Never silently map the dataset's class indices to alphabet characters without verification.
+
+---
+
+# 6. PREPROCESSING AND FEATURE ENGINEERING
+
+Create one clearly documented preprocessing specification shared by the data collection, training, evaluation, and inference workflows.
+
+The specification must define:
+
+1. Landmark ordering.
+2. Coordinate representation.
+3. Missing-landmark handling.
+4. Wrist-relative coordinate transformation.
+5. Hand-scale normalization.
+6. Epsilon handling for zero or near-zero scale.
+7. Coordinate clipping or validation, where appropriate.
+8. Output dimensionality and numerical type.
+9. Any handedness convention.
+10. The exact version of the preprocessing configuration used by the trained model.
+
+For a landmark-based model, investigate:
+
+p_i' = (p_i - p_0) / (s + epsilon)
+
+where p_0 is the wrist landmark and s is a documented hand-scale estimate.
+
+Do not assume this normalization removes all orientation or handedness variation. Test the effects where practical.
+
+If training uses normalized coordinates, inference must use the identical procedure.
+
+Validate that all features are finite and have the expected dimensionality before model inference.
+
+Reject malformed inputs with clear, structured errors.
+
+Do not silently replace missing landmarks with fabricated coordinates.
+
+Save the preprocessing configuration alongside the model artifact.
+
+---
+
+# 7. MODEL TRAINING AND ARTIFACT MANAGEMENT
+
+Implement a reproducible training workflow.
+
+Requirements:
+
+- Configurable random seed.
+- Explicit training, validation, and test splits.
+- Stratified splits when appropriate.
+- Participant/session-based splitting for webcam data wherever possible.
+- Normalization fitted using training data only when parameters are learned from data.
+- Cross-entropy loss for multiclass classification.
+- Adam or another justified optimizer.
+- Early stopping or a justified stopping criterion.
+- Validation metrics.
+- Per-class metrics.
+- Confusion matrix.
+- Saved model parameters.
+- Saved label mapping.
+- Saved preprocessing configuration.
+- Recorded training configuration and dataset provenance.
+
+Use PyTorch state_dict-based model saving where practical.
+
+At inference time:
+
+- Set the model to evaluation mode.
+- Disable gradient computation.
+- Return raw logits internally.
+- Compute softmax probabilities when required.
+- Do not interpret softmax confidence as a guarantee that the prediction is correct.
+
+Never report fabricated accuracy, latency, training duration, or FPS.
+
+If no trained model artifact exists, the API must report that the model is not ready and provide an actionable explanation.
+
+Never return a fake letter to make the interface appear functional.
+
+---
+
+# 8. FASTAPI BACKEND REQUIREMENTS
+
+Create a maintainable backend structure similar to:
+
+backend/
+    app/
+        __init__.py
+        main.py
+        schemas.py
+        model.py
+        predictor.py
+        config.py
+    tests/
+        test_health.py
+        test_prediction.py
+        test_validation.py
+    models/
+    requirements.txt
+    .env.example
+
+Implement these endpoints.
+
+## GET /health
+
+Return service health and basic version information.
+
+## GET /ready
+
+Report whether the model is actually loaded and ready for inference.
+
+A running HTTP server is not proof that a trained model is available.
+
+## GET /metadata
+
+Return the supported labels, input dimensionality, preprocessing version, and relevant model metadata.
+
+## POST /predict
+
+Accept a validated request containing exactly 63 normalized landmark features.
+
+Return a documented response containing fields such as:
+
+- ready
+- letter
+- confidence
+- probabilities or top predictions when useful
+- model version
+- error or status information where applicable
+
+Use Pydantic models for validation.
+
+Return appropriate HTTP error codes for invalid requests and unavailable model artifacts.
+
+Handle inference exceptions without leaking stack traces or sensitive local paths to clients.
+
+Avoid returning a valid-looking prediction if inference fails.
+
+Set request-size limits and reasonable rate limits where appropriate for the local demo.
+
+Configure CORS explicitly for development and deployment environments.
+
+---
+
+# 9. PREMIUM FRONTEND DESIGN
+
+Product name: SIGNAL
+
+Design direction:
+
+Premium, restrained, modern, editorial, accessible, and technically credible.
+
+Avoid generic AI landing-page aesthetics, excessive gradients, excessive glow, random animated particles, and unnecessary glassmorphism.
+
+Use typography, whitespace, composition, borders, restrained color, and excellent information hierarchy to create a premium product.
+
+Use a dark charcoal or near-black foundation, neutral surfaces, readable white text, and one restrained accent color.
+
+The application must remain usable on desktop and mobile.
+
+## Main application layout
+
+Create a polished application shell with:
+
+1. Product identity and navigation.
+2. Clear description of the tool and its limitations.
+3. Camera connection and model status indicators.
+4. Live webcam panel.
+5. Visible hand-landmark overlay.
+6. Large current-letter display.
+7. Confidence and recognition status.
+8. Recognized text area.
+9. Add Letter control.
+10. Space, Backspace, Clear, and Copy controls.
+11. Start/Stop Camera controls.
+12. Clear no-hand-detected and low-confidence states.
+13. A small technical status section with measured latency when available.
+14. A concise accessibility and privacy notice.
+
+Build reusable components:
+
+- CameraPanel
+- PredictionCard
+- TextComposer
+- ConnectionStatus
+- ConfidenceIndicator
+- PerformancePanel
+- ErrorBanner
+- LoadingState
+
+Do not render decorative controls that do nothing.
+
+Every button must have a real, tested behavior.
+
+Avoid showing invented accuracy metrics, fabricated user counts, fake live status, or sample predictions presented as real results.
+
+If the model is unavailable, make the limitation obvious and offer a clear setup or training instruction.
+
+## Camera experience
+
+- Request camera permission only when the user starts the camera.
+- Handle permission denial gracefully.
+- Handle devices without cameras.
+- Release media tracks when stopping the camera or unmounting the component.
+- Avoid multiple simultaneous camera loops.
+- Clean up animation frames, workers, timers, and network requests.
+- Avoid processing the same frame repeatedly when unnecessary.
+- Keep the interface responsive during inference.
+- Use appropriate frame scheduling and backpressure.
+- Avoid excessive API calls.
+
+If necessary, run MediaPipe processing in a Web Worker after the basic implementation works.
+
+## Text composition
+
+Do not append letters continuously simply because a gesture remains visible.
+
+Use a deliberate Add Letter action for the initial version.
+
+Maintain a stable current prediction and allow the user to append that letter to text.
+
+Provide Space, Backspace, Clear, and Copy operations.
+
+Prevent stale API responses from overwriting newer predictions.
+
+If an older prediction request completes after a newer one, use request sequencing or cancellation to ensure the UI displays the most recent valid result.
+
+---
+
+# 10. TEMPORAL STABILIZATION AND RECOGNITION QUALITY
+
+Implement a simple, testable stabilization strategy.
+
+Start with a rolling window of recent valid predictions and an adjustable confidence threshold.
+
+Only present a gesture as stable when it satisfies documented criteria.
+
+Expose sensible defaults as configuration rather than scattering magic numbers throughout the code.
+
+Provide a distinct uncertain state.
+
+Avoid presenting a softmax score as a calibrated probability unless calibration has been evaluated.
+
+Prevent repeated-letter insertion through the manual Add Letter workflow.
+
+Document that static classification does not fully recognize movement-based letters J and Z.
+
+Do not silently add motion recognition to the scope unless the static application works first.
+
+---
+
+# 11. TESTING REQUIREMENTS
+
+Write tests throughout implementation rather than waiting until the end.
+
+## Backend tests
+
+Test:
+
+- Health endpoint.
+- Readiness when no model exists.
+- Model loading.
+- Correctly shaped valid inputs.
+- Incorrect feature dimensionality.
+- NaN and infinite coordinates.
+- Invalid request payloads.
+- Model inference response schema.
+- Prediction behavior using a deliberately created test model fixture.
+- Missing artifact handling.
+- Inference error handling.
+
+A test fixture is allowed to use synthetic data to test API mechanics. It must never be presented as a trained ASL model or as evidence of recognition accuracy.
+
+## Frontend tests
+
+Test:
+
+- Initial UI state.
+- Camera permission errors.
+- No-hand-detected state.
+- Backend unavailable state.
+- Model not ready state.
+- Valid prediction rendering.
+- Low-confidence state.
+- Text composition.
+- Backspace, Space, Clear and Copy behavior.
+- Start/Stop Camera lifecycle.
+- Cleanup of asynchronous resources.
+
+Mock camera and MediaPipe behavior in automated unit tests where necessary.
+
+## Integration tests
+
+Verify that:
+
+- The frontend can call the backend.
+- The backend validates landmark input.
+- The response conforms to the TypeScript response type.
+- Errors are handled visibly.
+- The UI never presents a fake prediction when the backend fails.
+
+Run the relevant test suites and fix failures.
+
+Run frontend type checking and production build.
+
+Run Python tests.
+
+Report the actual command results. Never claim all tests pass if any were skipped or failed.
+
+---
+
+# 12. PERFORMANCE AND RESOURCE MANAGEMENT
+
+Optimize for a standard CPU-based laptop.
+
+Requirements:
+
+- Load the model once.
+- Use inference mode or no-gradient execution.
+- Use a small classifier.
+- Avoid unnecessary image uploads.
+- Send only landmark features to the backend.
+- Control the prediction request frequency.
+- Avoid an unbounded queue of pending requests.
+- Keep the UI responsive.
+- Measure actual request latency.
+- Measure actual end-to-end prediction latency where feasible.
+- Display performance measurements only when they are actually available.
+
+Do not promise a particular FPS or latency without measuring it on the target hardware.
+
+Document any performance limitations and suggest realistic improvements.
+
+---
+
+# 13. PROJECT STRUCTURE AND CODE QUALITY
+
+Use a clean repository structure similar to:
+
+asl-gesture-recognition/
+    frontend/
+        public/
+        src/
+            components/
+            hooks/
+            lib/
+            types/
+            App.tsx
+            main.tsx
+            index.css
+        package.json
+        vite.config.ts
+    backend/
+        app/
+        tests/
+        models/
+        requirements.txt
+        .env.example
+    training/
+        collect_landmarks.py
+        train.py
+        evaluate.py
+        prepare_data.py
+    data/
+        raw/
+        processed/
+    README.md
+    .gitignore
+
+Adapt this structure to the existing repository rather than duplicating existing directories.
+
+Requirements:
+
+- Strong TypeScript typing.
+- Small, reusable components.
+- Clear separation of concerns.
+- No giant monolithic component.
+- No hard-coded absolute filesystem paths.
+- No credentials committed to Git.
+- No unused dependencies without justification.
+- No unexplained magic numbers.
+- No placeholder TODOs for essential functionality.
+- No silent exception swallowing.
+- No unnecessary databases.
+- No fake model artifacts.
+- No fabricated test results.
+
+Add clear comments where implementation choices are non-obvious.
+
+---
+
+# 14. WINDOWS DEVELOPMENT EXPERIENCE
+
+The primary development environment is Windows with PowerShell.
+
+Provide exact commands for:
+
+1. Installing dependencies.
+2. Creating and activating a Python virtual environment.
+3. Starting FastAPI.
+4. Starting Vite.
+5. Training the model.
+6. Collecting labeled landmark data.
+7. Running tests.
+8. Building the frontend.
+9. Troubleshooting camera access.
+10. Troubleshooting missing model artifacts.
+
+Prefer cross-platform Python code and pathlib for filesystem operations.
+
+Do not assume Bash commands work in PowerShell.
+
+Ensure the frontend and backend can be started in two separate terminals.
+
+Add a root README with a clear first-run checklist.
+
+Document the expected model artifact path and how it is generated.
+
+---
+
+# 15. DEPLOYMENT AND PRIVACY
+
+The local development workflow is the primary deliverable.
+
+Document a deployment option for:
+
+- React frontend on Vercel.
+- Python backend on a compatible Python hosting service.
+
+Do not assume Vercel can run the entire PyTorch backend without checking the platform's runtime and deployment constraints.
+
+Configure the frontend API URL through an environment variable such as VITE_API_BASE_URL.
+
+Configure backend origins through an environment variable.
+
+Use HTTPS for deployed webcam access.
+
+Keep webcam processing local during the development demo.
+
+Do not persist personal recordings by default.
+
+If data collection is enabled, explain what is stored and obtain consent from participants.
+
+Review licenses for the dataset, MediaPipe model assets, libraries, and any redistributable model artifacts.
+
+---
+
+# 16. EXECUTION STRATEGY
+
+Work in small, verifiable stages.
+
+## Phase A — Repository and environment
+
+Inspect the project, install dependencies, and establish the working frontend/backend skeleton.
+
+Acceptance criteria:
+
+- Vite runs.
+- FastAPI runs.
+- Health endpoint works.
+- Frontend can communicate with backend.
+
+## Phase B — Live hand tracking
+
+Implement webcam access, MediaPipe initialization, landmark extraction, overlay rendering, and proper resource cleanup.
+
+Acceptance criteria:
+
+- A real webcam can be opened.
+- Hand landmarks appear when a hand is visible.
+- Permission and device errors are handled.
+- The camera can be stopped safely.
+
+## Phase C — Data pipeline
+
+Implement labeled landmark collection, feature normalization, dataset validation, and reproducible splits.
+
+Acceptance criteria:
+
+- Labeled examples can be collected and saved.
+- Feature dimensions are correct.
+- Training and evaluation use compatible preprocessing.
+- Invalid samples are identified rather than silently accepted.
+
+## Phase D — Model training
+
+Implement the MLP, training loop, evaluation, and model saving.
+
+Acceptance criteria:
+
+- Training completes on a small pilot dataset.
+- A model artifact is produced.
+- Evaluation results are generated from held-out data.
+- The artifact can be loaded by the backend.
+
+## Phase E — Real inference
+
+Replace temporary API behavior with actual PyTorch predictions.
+
+Acceptance criteria:
+
+- The backend reports readiness correctly.
+- Valid inputs produce real model outputs.
+- Invalid inputs return errors.
+- Missing models do not produce fake predictions.
+
+## Phase F — End-to-end interface
+
+Connect live landmarks to the backend, display the current prediction, stabilize predictions, and implement text composition.
+
+Acceptance criteria:
+
+- A real webcam gesture reaches the trained model.
+- The actual model prediction appears in React.
+- A stable letter can be appended to text.
+- No-hand and low-confidence states work.
+
+## Phase G — Premium polish
+
+Refine visual design, responsiveness, loading states, accessibility, error messages, and measured performance.
+
+Acceptance criteria:
+
+- The interface is coherent on desktop and mobile.
+- Every visible control works.
+- The layout remains usable when the backend or camera fails.
+- No fake statistics are displayed.
+
+## Phase H — Verification and handoff
+
+Run tests, type checking, and production builds. Fix failures, document limitations, and prepare a demo workflow.
+
+Acceptance criteria:
+
+- Frontend production build succeeds.
+- Backend tests run and results are reported.
+- Frontend tests run where configured.
+- A fresh developer can follow the README.
+- The working and unimplemented features are explicitly distinguished.
+
+---
+
+# 17. FINAL DELIVERABLES
+
+Deliver:
+
+1. Complete frontend source code.
+2. Complete Python backend source code.
+3. Working webcam and hand-landmark integration.
+4. A labeled landmark collection workflow.
+5. Reproducible PyTorch training code.
+6. A trained model artifact only if genuine training has been completed.
+7. Evaluation metrics and confusion matrix when data permits.
+8. Automated backend and frontend tests.
+9. Dependency and configuration files.
+10. A root README with Windows PowerShell commands.
+11. `.gitignore` excluding datasets, virtual environments, caches, and local secrets.
+12. A clear explanation of the 24-class limitation.
+13. Troubleshooting instructions.
+14. A final implementation report.
+
+The final report must include:
+
+- Features implemented.
+- Files created or changed.
+- Commands executed.
+- Tests actually run and their results.
+- Whether a genuine model was trained.
+- Where the model artifact is stored, if available.
+- Whether the webcam-to-model-to-UI pipeline was verified.
+- Known limitations.
+- Remaining work.
+- Exact commands needed to start the project.
+
+Use a status distinction such as:
+
+- VERIFIED WORKING
+- IMPLEMENTED BUT NOT FULLY VERIFIED
+- BLOCKED
+- NOT IMPLEMENTED
+
+Never label a feature VERIFIED WORKING without evidence.
+
+---
+
+# 18. OPERATING RULES
+
+1. Prioritize working functionality over decorative complexity.
+2. Do not stop after producing a plan.
+3. Do not ask me to implement code you can implement yourself.
+4. Do not rewrite functioning code unnecessarily.
+5. Do not use fake predictions to simulate a working model.
+6. Do not fabricate datasets, training results, or performance figures.
+7. Do not claim that the model recognizes 26 letters when it recognizes only 24 static classes.
+8. Do not mix incompatible image and landmark representations.
+9. Do not hide errors behind generic success messages.
+10. When something fails, inspect the error, identify the root cause, implement a fix, and rerun the relevant test.
+11. If a dependency, dataset, hardware capability, or tool is unavailable, state the blocker and continue with the remaining feasible work.
+12. Do not wait for perfect conditions before delivering a functional milestone.
+13. Keep the code understandable to a student with some programming experience.
+14. Explain significant architectural choices briefly in the final report.
+15. Do not finish by merely saying what I should do next. Implement the available work and leave the repository in the best verified state possible.
+
+# START NOW
+
+Inspect the repository and environment.
+
+Then implement Phase A immediately, verify it, and continue through the remaining phases in dependency order.
+
+The ultimate objective is a premium-looking, genuinely functional, locally runnable ASL gesture recognition web application whose real predictions come from a compatible, trained model—not a mockup.
+
+Begin with the actual files and tools available to you.

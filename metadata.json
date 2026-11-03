@@ -1,0 +1,6 @@
+{
+  "name": "SIGNAL - Real-Time ASL Gesture Recognition",
+  "description": "Real-time AI-powered assistive communication prototype converting ASL alphabet gestures into readable text with MediaPipe hand landmark tracking and PyTorch MLP classification.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
