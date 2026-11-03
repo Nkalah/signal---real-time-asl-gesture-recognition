@@ -18,37 +18,43 @@ from training.prepare_data import (
 ROOT_DIR = Path(__file__).resolve().parents[2]
 
 
-def test_training_and_browser_preprocessing_match():
-    rng = np.random.default_rng(42)
-    raw = rng.uniform(-0.2, 1.0, size=(21, 3)).astype(np.float32)
-    landmarks = [
-        {"x": float(x), "y": float(y), "z": float(z)}
-        for x, y, z in raw
-    ]
+def test_python_and_typescript_match_python_generated_golden_vectors():
+    fixture_path = ROOT_DIR / "backend" / "tests" / "fixtures" / "preprocessing_v2_golden.json"
+    fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+    assert fixture["preprocessing_version"] == "v2.0.0"
+
     script = (
         "import { preprocessLandmarks } from './src/lib/api.ts';"
-        "console.log(JSON.stringify(preprocessLandmarks(JSON.parse(process.argv[1]))));"
+        "const input = JSON.parse(process.argv[1]);"
+        "console.log(JSON.stringify(preprocessLandmarks(input.landmarks, input.handedness)));"
     )
-    completed = subprocess.run(
-        [
-            "node",
-            "--import",
-            "tsx/esm",
-            "--input-type=module",
-            "-e",
-            script,
-            json.dumps(landmarks),
-        ],
-        cwd=ROOT_DIR,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
+    for case in fixture["cases"]:
+        raw = np.asarray(case["raw_landmarks"], dtype=np.float32)
+        python_features = normalize_landmarks(raw, case["handedness"])
+        np.testing.assert_allclose(python_features, case["expected"], rtol=0, atol=1e-7)
 
-    browser_features = np.asarray(json.loads(completed.stdout), dtype=np.float32)
-    training_features = normalize_landmarks(raw)
-    assert browser_features.shape == (63,)
-    np.testing.assert_allclose(browser_features, training_features, rtol=1e-6, atol=1e-6)
+        landmarks = [
+            {"x": float(x), "y": float(y), "z": float(z)}
+            for x, y, z in raw
+        ]
+        completed = subprocess.run(
+            [
+                "node",
+                "--import",
+                "tsx/esm",
+                "--input-type=module",
+                "-e",
+                script,
+                json.dumps({"landmarks": landmarks, "handedness": case["handedness"]}),
+            ],
+            cwd=ROOT_DIR,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        typescript_features = np.asarray(json.loads(completed.stdout), dtype=np.float32)
+        assert typescript_features.shape == (63,)
+        np.testing.assert_allclose(typescript_features, python_features, rtol=0, atol=1e-5)
 
 
 def test_supported_letter_order_matches_training_and_backend():
